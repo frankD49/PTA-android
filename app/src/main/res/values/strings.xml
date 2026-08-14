@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PTA</string>
+    <string name="title_activity_main">PTA</string>
+    <string name="package_name">com.precioustotsacademy.pta</string>
+    <string name="custom_url_scheme">com.precioustotsacademy.pta</string>
+</resources>
