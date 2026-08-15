@@ -206,7 +206,8 @@ function isAdminUser(user) {
 
 // ===== Biometric / Screen Lock 2FA =====
 let biometricUnlocked = false;
-let biometricEnabled = localStorage.getItem('biometricEnabled') === 'true';
+let biometricAuthenticationInProgress = false;
+let approvedSessionActive = false;
 
 async function checkBiometricAvailability() {
   if (!window.Capacitor || !window.Capacitor.Plugins.BiometricAuth) return null;
@@ -250,7 +251,10 @@ function hideBiometricLock() {
 }
 
 async function tryBiometricUnlock() {
+  if (biometricAuthenticationInProgress) return;
+  biometricAuthenticationInProgress = true;
   const success = await biometricAuthenticate();
+  biometricAuthenticationInProgress = false;
   if (success) {
     hideBiometricLock();
   } else {
@@ -259,17 +263,16 @@ async function tryBiometricUnlock() {
   }
 }
 
-// Initialize biometric on app load if enabled and user is logged in
+// Approved accounts must pass device authentication before app access.
 async function initBiometricIfNeeded() {
-  if (!biometricEnabled) return;
+  if (biometricUnlocked || biometricAuthenticationInProgress) return;
   const { data } = await sb.auth.getSession();
   if (!data.session) return;
-
-  const biometry = await checkBiometricAvailability();
-  if (biometry && biometry.isAvailable) {
-    showBiometricLock();
-    await tryBiometricUnlock();
-  }
+  const user = data.session.user;
+  if (!isAdmin(user.email, user) && user.app_metadata?.invite_status !== 'approved') return;
+  approvedSessionActive = true;
+  showBiometricLock();
+  await tryBiometricUnlock();
 }
 
 // Biometric lock button handlers
@@ -277,6 +280,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const unlockBtn = document.getElementById('biometricUnlockBtn');
   if (unlockBtn) unlockBtn.addEventListener('click', tryBiometricUnlock);
 });
+
+// Obscure approved-account content in the app switcher and authenticate again on resume.
+if (window.Capacitor?.Plugins?.App) {
+  window.Capacitor.Plugins.App.addListener('pause', () => {
+    if (!approvedSessionActive) return;
+    biometricUnlocked = false;
+    showBiometricLock();
+  });
+  window.Capacitor.Plugins.App.addListener('resume', () => {
+    if (approvedSessionActive) initBiometricIfNeeded();
+  });
+}
 
 // Signup form
 document.getElementById('signupForm').addEventListener('submit', async function (e) {
@@ -369,10 +384,7 @@ document.getElementById('loginForm').addEventListener('submit', async function (
     this.reset();
     showProtectedApp(data.user);
 
-    // Trigger biometric lock if enabled
-    if (biometricEnabled) {
-      setTimeout(() => initBiometricIfNeeded(), 1600);
-    }
+    setTimeout(() => initBiometricIfNeeded(), 100);
   } catch (error) {
     console.error('Login error:', error);
     if (sb) await sb.auth.signOut();
@@ -426,6 +438,7 @@ document.getElementById('forgotPasswordForm').addEventListener('submit', async f
 
 // Update nav for logged-in user
 function updateNavigationForLoggedInUser(user) {
+  approvedSessionActive = isAdmin(user.email, user) || user.app_metadata?.invite_status === 'approved';
   const loginTrigger = document.getElementById('loginTrigger');
   if (loginTrigger) {
     const name = (user.user_metadata && (user.user_metadata.first_name || user.user_metadata.full_name)) || user.email.split('@')[0];
@@ -448,15 +461,18 @@ function updateNavigationForLoggedInUser(user) {
     loadAdminMembers();
   }
 
-  // Show biometric toggle in settings
-  const biometricToggle = document.getElementById('biometricToggleContainer');
-  if (biometricToggle) biometricToggle.style.display = 'block';
+  if (approvedSessionActive) setTimeout(() => initBiometricIfNeeded(), 100);
 }
 
 // Check auth state on load
 if (sb) {
   sb.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_OUT') showAuthLanding('loginPanel');
+    if (event === 'SIGNED_OUT') {
+      approvedSessionActive = false;
+      biometricUnlocked = false;
+      hideBiometricLock();
+      showAuthLanding('loginPanel');
+    }
     if (session && session.user && (isAdmin(session.user.email, session.user) || session.user.app_metadata?.invite_status === 'approved')) {
       showProtectedApp(session.user);
     }
@@ -899,27 +915,6 @@ function showInviteShareOptions(email, inviteCode) {
   panel.appendChild(actions);
   container.appendChild(panel);
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-  // Biometric toggle handler
-  const biometricToggle = document.getElementById('biometricToggle');
-  if (biometricToggle) {
-    biometricToggle.checked = biometricEnabled;
-    biometricToggle.addEventListener('change', async (e) => {
-      biometricEnabled = e.target.checked;
-      localStorage.setItem('biometricEnabled', biometricEnabled);
-      if (biometricEnabled) {
-        const biometry = await checkBiometricAvailability();
-        if (!biometry || !biometry.isAvailable) {
-          showAdminAlert('Biometric authentication not available on this device.', 'error');
-          biometricEnabled = false;
-          localStorage.setItem('biometricEnabled', 'false');
-          e.target.checked = false;
-        }
-      }
-    });
-  }
-});
 
 // ===== Program Detail Sheet =====
 const programData = {
