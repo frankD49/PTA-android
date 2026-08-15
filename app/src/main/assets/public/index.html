@@ -125,14 +125,6 @@
         <div class="app-bar-logo">PT</div>
         <span id="appBarTitle">Precious Tots Academy</span>
       </div>
-      <div class="app-bar-actions">
-        <button class="icon-btn" id="loginTrigger" aria-label="Login">
-          <i class="bi bi-person-circle"></i>
-        </button>
-        <button class="icon-btn" id="themeToggle" aria-label="Toggle theme">
-          <i class="bi bi-moon"></i>
-        </button>
-      </div>
     </header>
 
     <!-- ===== Home Page ===== -->
@@ -493,7 +485,16 @@
   </div><!-- /app-shell -->
 
   <div class="menu-overlay protected-app" id="menuOverlay" style="display:none;"></div>
-  <aside class="side-menu protected-app" id="sideMenu" style="display:none;"><div class="side-menu-header"><strong>PTA Menu</strong><button class="icon-btn" id="menuClose"><i class="bi bi-x-lg"></i></button></div><button class="menu-item" data-menu-page="page-gallery"><i class="bi bi-megaphone"></i> Noticeboard</button><button class="menu-item" data-menu-page="page-chat"><i class="bi bi-chat-dots"></i> Chatroom</button><button class="menu-item" data-menu-page="page-account"><i class="bi bi-person-gear"></i> Account &amp; Legal</button></aside>
+  <aside class="side-menu protected-app" id="sideMenu" style="display:none;">
+    <div class="side-menu-header"><strong>PTA Menu</strong><button class="icon-btn" id="menuClose"><i class="bi bi-x-lg"></i></button></div>
+    <button class="menu-item" data-menu-page="page-gallery"><i class="bi bi-megaphone"></i> Noticeboard</button>
+    <button class="menu-item" data-menu-page="page-chat"><i class="bi bi-chat-dots"></i> Chatroom</button>
+    <div class="menu-section-label">Settings</div>
+    <button class="menu-item" data-menu-page="page-account"><i class="bi bi-person-gear"></i> Account &amp; Legal</button>
+    <button class="menu-item" data-menu-sheet="changePasswordSheet" type="button"><i class="bi bi-key"></i> Change Password</button>
+    <button class="menu-item" id="themeToggle" type="button"><i class="bi bi-moon"></i><span class="menu-control-label">Dark mode</span></button>
+    <button class="menu-item" id="loginTrigger" type="button"><i class="bi bi-box-arrow-right"></i><span class="menu-control-label">Sign out</span></button>
+  </aside>
 
   <!-- ===== Biometric Lock Screen ===== -->
   <div id="biometricLock" class="biometric-lock">
@@ -582,6 +583,34 @@
       <div style="text-align: center; margin-top: 14px;">
         <a href="#" class="auth-link" id="backToLogin">Back to Login</a>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== Change Password Sheet ===== -->
+  <div class="bottom-sheet" id="changePasswordSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-content">
+      <div class="sheet-icon"><i class="bi bi-shield-lock"></i></div>
+      <h3 class="sheet-title">Change Password</h3>
+      <p class="sheet-description">Confirm your current password, then choose a new password.</p>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label class="form-label" for="currentPassword">Current Password</label>
+          <input type="password" class="form-input" id="currentPassword" autocomplete="current-password" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="newPassword">New Password</label>
+          <input type="password" class="form-input" id="newPassword" autocomplete="new-password" minlength="6" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="confirmNewPassword">Confirm New Password</label>
+          <input type="password" class="form-input" id="confirmNewPassword" autocomplete="new-password" minlength="6" required>
+        </div>
+        <button type="submit" class="auth-btn">
+          <span class="btn-text">Update Password</span>
+          <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>
+        </button>
+      </form>
     </div>
   </div>
 

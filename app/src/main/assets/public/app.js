@@ -22,7 +22,9 @@ if (savedTheme) root.dataset.theme = savedTheme;
 
 function updateThemeIcon() {
   const icon = document.querySelector('#themeToggle i');
+  const label = document.querySelector('#themeToggle .menu-control-label');
   if (icon) icon.className = root.dataset.theme === 'light' ? 'bi bi-moon' : 'bi bi-sun';
+  if (label) label.textContent = root.dataset.theme === 'light' ? 'Dark mode' : 'Light mode';
 }
 updateThemeIcon();
 
@@ -445,9 +447,10 @@ function updateNavigationForLoggedInUser(user) {
   const loginTrigger = document.getElementById('loginTrigger');
   if (loginTrigger) {
     const name = (user.user_metadata && (user.user_metadata.first_name || user.user_metadata.full_name)) || user.email.split('@')[0];
-    loginTrigger.innerHTML = `<i class="bi bi-person-check"></i> ${name}`;
+    loginTrigger.innerHTML = `<i class="bi bi-box-arrow-right"></i><span class="menu-control-label"><strong>Sign out</strong><small>${name}</small></span>`;
     loginTrigger.onclick = async () => {
       if (sb) {
+        closeMenu();
         await sb.auth.signOut();
         showAuthLanding('loginPanel');
       }
@@ -515,6 +518,55 @@ document.getElementById('menuToggle')?.addEventListener('click', () => { documen
 document.getElementById('menuClose')?.addEventListener('click', closeMenu);
 document.getElementById('menuOverlay')?.addEventListener('click', closeMenu);
 document.querySelectorAll('[data-menu-page]').forEach(btn => btn.addEventListener('click', () => { const page = btn.dataset.menuPage; closeMenu(); switchPage(page); if (page === 'page-chat') loadChatMessages(); }));
+document.querySelectorAll('[data-menu-sheet]').forEach(button => button.addEventListener('click', () => {
+  closeMenu();
+  showSheet(button.dataset.menuSheet);
+}));
+
+document.getElementById('changePasswordForm')?.addEventListener('submit', async function (event) {
+  event.preventDefault();
+  const currentPassword = document.getElementById('currentPassword').value;
+  const newPassword = document.getElementById('newPassword').value;
+  const confirmPassword = document.getElementById('confirmNewPassword').value;
+  const submitButton = this.querySelector('.auth-btn');
+
+  if (newPassword.length < 6) {
+    showAlert('Your new password must be at least 6 characters.', 'error', 'changePasswordSheet');
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    showAlert('The new passwords do not match.', 'error', 'changePasswordSheet');
+    return;
+  }
+  if (currentPassword === newPassword) {
+    showAlert('Choose a new password that is different from your current password.', 'error', 'changePasswordSheet');
+    return;
+  }
+
+  setButtonLoading(submitButton, true);
+  try {
+    if (!sb) throw new Error('Account service is unavailable.');
+    const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+    if (sessionError || !sessionData.session?.user?.email) throw new Error('Your session has expired. Please log in again.');
+
+    const { error: verifyError } = await sb.auth.signInWithPassword({
+      email: sessionData.session.user.email,
+      password: currentPassword,
+    });
+    if (verifyError) throw new Error('Your current password is incorrect.');
+
+    const { error: updateError } = await sb.auth.updateUser({ password: newPassword });
+    if (updateError) throw updateError;
+
+    this.reset();
+    showAlert('Password changed successfully.', 'success', 'changePasswordSheet');
+    setTimeout(hideSheet, 1200);
+  } catch (error) {
+    showAlert(error.message || 'Unable to change your password. Please try again.', 'error', 'changePasswordSheet');
+  } finally {
+    setButtonLoading(submitButton, false);
+  }
+});
 function renderChatMessage(m, uid) {
   const row=document.createElement('div');
   row.className='chat-message'+(m.user_id===uid?' mine':'');
