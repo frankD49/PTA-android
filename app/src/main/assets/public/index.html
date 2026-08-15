@@ -84,6 +84,7 @@
             <span class="btn-text">Request invite code</span>
             <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>
           </button>
+          <p class="legal-links">By requesting an account you acknowledge our <a href="legal/privacy.html" target="_blank">Privacy Policy</a>. You will accept the <a href="legal/terms.html" target="_blank">Terms</a> and <a href="legal/community-guidelines.html" target="_blank">Community Guidelines</a> before posting.</p>
         </form>
       </div>
 
@@ -423,6 +424,22 @@
       <form id="chatForm" class="chat-compose"><textarea id="chatInput" class="form-input" rows="2" maxlength="1000" placeholder="Type a message…" required></textarea><button class="auth-btn" type="submit"><i class="bi bi-send"></i> Send</button></form>
     </div>
 
+    <div class="page" id="page-account">
+      <h2 class="section-title"><i class="bi bi-person-gear"></i> Account &amp; Legal</h2>
+      <p class="section-subtitle">Manage your account and review PTA policies</p>
+      <div class="card-glass legal-menu">
+        <a href="legal/privacy.html" target="_blank"><i class="bi bi-shield-check"></i> Privacy Policy</a>
+        <a href="legal/terms.html" target="_blank"><i class="bi bi-file-text"></i> Terms of Use</a>
+        <a href="legal/community-guidelines.html" target="_blank"><i class="bi bi-people"></i> Community Guidelines</a>
+        <a href="legal/delete-account.html" target="_blank"><i class="bi bi-info-circle"></i> Account deletion information</a>
+      </div>
+      <div class="card-glass danger-zone">
+        <h3>Delete account</h3>
+        <p>Access will be revoked immediately. Your account is scheduled for permanent deletion after 14 days. Chat history is anonymized; owned uploads are deleted. Minimal safety records may be retained as described in the Privacy Policy.</p>
+        <button type="button" class="danger-btn" id="deleteAccountBtn"><i class="bi bi-trash3"></i> Request account deletion</button>
+      </div>
+    </div>
+
     <!-- ===== Admin Page (hidden, shown for admins only) ===== -->
     <div class="page" id="page-admin">
       <h2 class="section-title scroll-animate"><i class="bi bi-shield-lock"></i> Admin Panel</h2>
@@ -465,12 +482,18 @@
         <div id="adminAdminList"></div>
       </div>
 
+      <div class="card-glass scroll-animate" style="margin-top: 12px;">
+        <div class="admin-section-heading"><h3><i class="bi bi-flag"></i> Reports</h3><span class="admin-count" id="adminReportCount">0</span></div>
+        <p class="admin-section-help">Review within 48 hours. Escalate child-safety concerns immediately to the safeguarding lead.</p>
+        <div id="adminReportList"><p class="admin-loading">Loading reports...</p></div>
+      </div>
+
     </div>
 
   </div><!-- /app-shell -->
 
   <div class="menu-overlay protected-app" id="menuOverlay" style="display:none;"></div>
-  <aside class="side-menu protected-app" id="sideMenu" style="display:none;"><div class="side-menu-header"><strong>PTA Menu</strong><button class="icon-btn" id="menuClose"><i class="bi bi-x-lg"></i></button></div><button class="menu-item" data-menu-page="page-gallery"><i class="bi bi-megaphone"></i> Noticeboard</button><button class="menu-item" data-menu-page="page-chat"><i class="bi bi-chat-dots"></i> Chatroom</button></aside>
+  <aside class="side-menu protected-app" id="sideMenu" style="display:none;"><div class="side-menu-header"><strong>PTA Menu</strong><button class="icon-btn" id="menuClose"><i class="bi bi-x-lg"></i></button></div><button class="menu-item" data-menu-page="page-gallery"><i class="bi bi-megaphone"></i> Noticeboard</button><button class="menu-item" data-menu-page="page-chat"><i class="bi bi-chat-dots"></i> Chatroom</button><button class="menu-item" data-menu-page="page-account"><i class="bi bi-person-gear"></i> Account &amp; Legal</button></aside>
 
   <!-- ===== Biometric Lock Screen ===== -->
   <div id="biometricLock" class="biometric-lock">
@@ -482,6 +505,30 @@
         <span class="btn-text">Unlock</span>
       </button>
     </div>
+  </div>
+
+  <div id="consentGate" class="compliance-overlay" role="dialog" aria-modal="true" aria-labelledby="consentTitle">
+    <div class="compliance-dialog">
+      <h3 id="consentTitle">Before you continue</h3>
+      <p>Review and accept the current PTA Terms of Use and Community Guidelines. Acceptance is recorded with the document version and time.</p>
+      <div class="guideline-summary"><strong>Community safety</strong><span>No harassment, threats, hate, sexual or exploitative content, spam, impersonation, illegal content, unauthorized school disclosures, or sharing children’s information/images without authorization. Content may be removed and accounts suspended.</span></div>
+      <div class="legal-links"><a href="legal/terms.html" target="_blank">Terms of Use</a> · <a href="legal/privacy.html" target="_blank">Privacy Policy</a> · <a href="legal/community-guidelines.html" target="_blank">Community Guidelines</a></div>
+      <label class="consent-check"><input type="checkbox" id="consentCheckbox"> <span>I have read and agree to the Terms of Use and Community Guidelines.</span></label>
+      <div id="consentError" class="form-error"></div>
+      <button type="button" class="auth-btn" id="acceptLegalBtn">Accept and continue</button>
+    </div>
+  </div>
+
+  <div id="reportSheet" class="compliance-overlay" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+    <form class="compliance-dialog" id="reportForm">
+      <h3 id="reportTitle">Report</h3>
+      <p id="reportTargetText"></p>
+      <label class="form-label" for="reportReason">Reason</label>
+      <select class="form-input" id="reportReason" required><option value="">Select a reason</option><option value="harassment">Harassment, bullying, threats or hate</option><option value="sexual_content">Sexual or exploitative content</option><option value="child_safety">Child safety or unauthorized child information</option><option value="privacy">Privacy violation</option><option value="spam_impersonation">Spam or impersonation</option><option value="illegal_content">Illegal content</option><option value="school_confidentiality">Unauthorized school information</option><option value="other">Other</option></select>
+      <label class="form-label" for="reportDetails">Details (optional)</label>
+      <textarea class="form-input" id="reportDetails" maxlength="2000" rows="4"></textarea>
+      <div class="dialog-actions"><button type="button" class="secondary-btn" id="cancelReportBtn">Cancel</button><button type="submit" class="auth-btn">Submit report</button></div>
+    </form>
   </div>
 
   <!-- ===== Bottom Tab Navigation ===== -->

@@ -257,6 +257,7 @@ async function tryBiometricUnlock() {
   biometricAuthenticationInProgress = false;
   if (success) {
     hideBiometricLock();
+    await checkLegalAcceptance();
   } else {
     const msg = document.getElementById('biometricMsg');
     if (msg) msg.textContent = 'Authentication failed. Try again.';
@@ -375,6 +376,7 @@ document.getElementById('loginForm').addEventListener('submit', async function (
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
+    if (!isAccountAllowed(data.user)) throw new Error('This account is suspended or pending deletion. Contact PTA support.');
     if (!isAdmin(data.user.email, data.user) && data.user.app_metadata?.invite_status !== 'approved') {
       if (!inviteCode) throw new Error('Your account is awaiting approval. Enter the access code provided by an administrator.');
       const verifiedUser = await verifyInviteCode(inviteCode);
@@ -439,6 +441,7 @@ document.getElementById('forgotPasswordForm').addEventListener('submit', async f
 // Update nav for logged-in user
 function updateNavigationForLoggedInUser(user) {
   approvedSessionActive = isAdmin(user.email, user) || user.app_metadata?.invite_status === 'approved';
+  enforceCurrentAccountStatus();
   const loginTrigger = document.getElementById('loginTrigger');
   if (loginTrigger) {
     const name = (user.user_metadata && (user.user_metadata.first_name || user.user_metadata.full_name)) || user.email.split('@')[0];
@@ -464,6 +467,21 @@ function updateNavigationForLoggedInUser(user) {
   if (approvedSessionActive) setTimeout(() => initBiometricIfNeeded(), 100);
 }
 
+async function enforceCurrentAccountStatus() {
+  const {data:sessionData}=await sb.auth.getSession();
+  if(!sessionData.session)return;
+  const {data:status}=await sb.from('account_status').select('status,reason,updated_at').eq('user_id',sessionData.session.user.id).maybeSingle();
+  if(status && status.status!=='active') {
+    await sb.auth.signOut();
+    alert(status.status==='suspended'?'Your PTA account is suspended. '+(status.reason||'Contact support for details.'):'Your account deletion request is pending. Contact support within the recovery window to cancel.');
+    return;
+  }
+  if(status?.reason?.startsWith('Warning:') && localStorage.getItem('lastAccountWarning')!==status.updated_at) {
+    localStorage.setItem('lastAccountWarning',status.updated_at);
+    alert(status.reason);
+  }
+}
+
 // Check auth state on load
 if (sb) {
   sb.auth.onAuthStateChange((event, session) => {
@@ -473,14 +491,14 @@ if (sb) {
       hideBiometricLock();
       showAuthLanding('loginPanel');
     }
-    if (session && session.user && (isAdmin(session.user.email, session.user) || session.user.app_metadata?.invite_status === 'approved')) {
+    if (session && session.user && isAccountAllowed(session.user) && (isAdmin(session.user.email, session.user) || session.user.app_metadata?.invite_status === 'approved')) {
       showProtectedApp(session.user);
     }
   });
 
   // Check existing session
   sb.auth.getSession().then(({ data }) => {
-    if (data.session && data.session.user && (isAdmin(data.session.user.email, data.session.user) || data.session.user.app_metadata?.invite_status === 'approved')) {
+    if (data.session && data.session.user && isAccountAllowed(data.session.user) && (isAdmin(data.session.user.email, data.session.user) || data.session.user.app_metadata?.invite_status === 'approved')) {
       showProtectedApp(data.session.user);
     } else {
       showAuthLanding('signupPanel');
@@ -497,9 +515,44 @@ document.getElementById('menuToggle')?.addEventListener('click', () => { documen
 document.getElementById('menuClose')?.addEventListener('click', closeMenu);
 document.getElementById('menuOverlay')?.addEventListener('click', closeMenu);
 document.querySelectorAll('[data-menu-page]').forEach(btn => btn.addEventListener('click', () => { const page = btn.dataset.menuPage; closeMenu(); switchPage(page); if (page === 'page-chat') loadChatMessages(); }));
-function renderChatMessage(m, uid) { const row=document.createElement('div'); row.className='chat-message'+(m.user_id===uid?' mine':''); const n=document.createElement('strong'); n.textContent=m.sender_name||'PTA Member'; const p=document.createElement('p'); p.textContent=m.body; const t=document.createElement('small'); t.textContent=new Date(m.created_at).toLocaleString(); row.append(n,p,t); return row; }
+function renderChatMessage(m, uid) {
+  const row=document.createElement('div');
+  row.className='chat-message'+(m.user_id===uid?' mine':'');
+  const header=document.createElement('div'); header.className='chat-message-header';
+  const n=document.createElement('button'); n.type='button'; n.className='chat-sender'; n.textContent=m.sender_name||'Deleted member';
+  if (m.user_id && m.user_id!==uid) n.addEventListener('click',()=>openReportSheet({reportedUserId:m.user_id,type:'user',senderName:m.sender_name}));
+  header.appendChild(n);
+  if (m.user_id && m.user_id!==uid) {
+    const menu=document.createElement('button'); menu.type='button'; menu.className='chat-menu-btn'; menu.setAttribute('aria-label','Message actions'); menu.innerHTML='<i class="bi bi-three-dots-vertical"></i>';
+    menu.addEventListener('click',()=>showMessageActions(m)); header.appendChild(menu);
+  }
+  const p=document.createElement('p'); p.textContent=m.moderation_status==='removed'?'Message removed by a moderator':m.body;
+  const t=document.createElement('small'); t.textContent=new Date(m.created_at).toLocaleString(); row.append(header,p,t); return row;
+}
 async function loadChatMessages() { if(!sb)return; const {data:s}=await sb.auth.getSession(); if(!s.session)return; const box=document.getElementById('chatMessages'); const {data,error}=await sb.from('chat_messages').select('*').order('created_at',{ascending:true}).limit(200); box.innerHTML=''; if(error){box.textContent='Chatroom setup is required in Supabase.';return;} data.forEach(m=>box.appendChild(renderChatMessage(m,s.session.user.id))); box.scrollTop=box.scrollHeight; if(!chatChannel)chatChannel=sb.channel('pta-chat').on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages'},p=>{box.appendChild(renderChatMessage(p.new,s.session.user.id));box.scrollTop=box.scrollHeight;}).subscribe(); }
-document.getElementById('chatForm')?.addEventListener('submit',async e=>{e.preventDefault();const input=document.getElementById('chatInput'),body=input.value.trim();if(!body)return;const {data}=await sb.auth.getSession(),user=data.session?.user;if(!user)return;const sender_name=user.user_metadata?.full_name||user.user_metadata?.first_name||user.email.split('@')[0];const {error}=await sb.from('chat_messages').insert({user_id:user.id,sender_name,body});if(!error)input.value='';else alert(error.message);});
+document.getElementById('chatForm')?.addEventListener('submit',async e=>{e.preventDefault();if(!await requireLegalAcceptance())return;const input=document.getElementById('chatInput'),body=input.value.trim();if(!body)return;const {data}=await sb.auth.getSession(),user=data.session?.user;if(!user)return;const sender_name=user.user_metadata?.full_name||user.user_metadata?.first_name||user.email.split('@')[0];const {error}=await sb.from('chat_messages').insert({user_id:user.id,sender_name,body});if(!error)input.value='';else alert(error.message);});
+
+function showMessageActions(message) {
+  const action=prompt('Message actions:\n1 — Report message\n2 — Report user\n3 — Block user');
+  if(action==='1') openReportSheet({reportedUserId:message.user_id,messageId:message.id,type:'message',senderName:message.sender_name});
+  if(action==='2') openReportSheet({reportedUserId:message.user_id,type:'user',senderName:message.sender_name});
+  if(action==='3') blockUser(message.user_id,message.sender_name);
+}
+
+function openReportSheet(target) {
+  pendingReportTarget=target;
+  document.getElementById('reportTargetText').textContent=`Report ${target.type} from ${target.senderName||'this member'}`;
+  document.getElementById('reportSheet').style.display='flex';
+}
+
+async function blockUser(userId,name) {
+  if(!confirm(`Block ${name||'this member'}? Their messages will be hidden for you.`))return;
+  const {data}=await sb.auth.getSession();
+  const {error}=await sb.from('user_blocks').insert({blocker_id:data.session.user.id,blocked_user_id:userId});
+  if(error && !error.message.includes('duplicate')) return alert(error.message);
+  await loadChatMessages();
+  alert('User blocked. You can still report safety concerns separately.');
+}
 
 const STORAGE_BUCKET = 'pta_uploads';
 
@@ -510,6 +563,7 @@ function getCurrentUserId() {
 
 async function uploadFile(file, category) {
   if (!sb) { showUploadAlert('Service not available.', 'error'); return; }
+  if (!await requireLegalAcceptance()) { showUploadAlert('Accept the current Terms and Community Guidelines before uploading.', 'error'); return; }
 
   const { data: sessionData } = await sb.auth.getSession();
   if (!sessionData.session) {
@@ -610,6 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Camera capture (Capacitor)
 async function capturePhoto() {
+  if (!await requireLegalAcceptance()) { showUploadAlert('Accept the current Terms and Community Guidelines before uploading.', 'error'); return; }
   if (!window.Capacitor || !window.Capacitor.Plugins.Camera) {
     // Fallback: trigger file input with camera capture
     const photoInput = document.getElementById('photoInput');
@@ -617,6 +672,10 @@ async function capturePhoto() {
     return;
   }
   try {
+    if (localStorage.getItem('cameraRationaleSeen') !== 'true') {
+      if (!confirm('PTA needs camera access only to take the photo you choose to upload to the school noticeboard. Continue?')) return;
+      localStorage.setItem('cameraRationaleSeen', 'true');
+    }
     const photo = await window.Capacitor.Plugins.Camera.getPhoto({
       quality: 80,
       allowEditing: false,
@@ -637,6 +696,14 @@ if (document.getElementById('cameraBtn')) {
 
 // ===== Admin Member Management (via Supabase Edge Function) =====
 const EDGE_FUNCTION_URL = 'https://pvhfkjinyrgxakvsoblp.supabase.co/functions/v1/admin-operations';
+const COMPLIANCE_FUNCTION_URL = 'https://pvhfkjinyrgxakvsoblp.supabase.co/functions/v1/compliance-operations';
+let legalAcceptanceCurrent = false;
+let requiredLegalDocuments = [];
+let pendingReportTarget = null;
+
+function isAccountAllowed(user) {
+  return !['suspended', 'deletion_pending'].includes(user?.app_metadata?.account_status);
+}
 
 async function verifyInviteCode(inviteCode) {
   const headers = await getAdminHeaders();
@@ -660,6 +727,62 @@ async function getAdminHeaders() {
     'Content-Type': 'application/json',
   };
 }
+
+async function checkLegalAcceptance() {
+  const {data:sessionData}=await sb.auth.getSession();
+  if(!sessionData.session)return false;
+  const [{data:documents,error:documentsError},{data:acceptances,error:acceptanceError}]=await Promise.all([
+    sb.from('legal_documents').select('*').eq('required',true),
+    sb.from('legal_acceptances').select('document_type,document_version').eq('user_id',sessionData.session.user.id),
+  ]);
+  if(documentsError||acceptanceError){console.error('Legal acceptance check failed',documentsError||acceptanceError);document.getElementById('consentGate').style.display='flex';document.getElementById('consentError').textContent='The legal service is unavailable. Posting and uploads remain disabled.';return false;}
+  requiredLegalDocuments=documents||[];
+  legalAcceptanceCurrent=requiredLegalDocuments.every(d=>(acceptances||[]).some(a=>a.document_type===d.document_type&&a.document_version===d.current_version));
+  document.getElementById('consentGate').style.display=legalAcceptanceCurrent?'none':'flex';
+  return legalAcceptanceCurrent;
+}
+
+async function requireLegalAcceptance() {
+  if(legalAcceptanceCurrent)return true;
+  await checkLegalAcceptance();
+  if(!legalAcceptanceCurrent)document.getElementById('consentError').textContent='Accept the current documents before posting or uploading.';
+  return legalAcceptanceCurrent;
+}
+
+document.getElementById('acceptLegalBtn')?.addEventListener('click',async()=>{
+  const checkbox=document.getElementById('consentCheckbox'),errorEl=document.getElementById('consentError'),button=document.getElementById('acceptLegalBtn');
+  if(!checkbox.checked){errorEl.textContent='You must explicitly check the acceptance box.';return;}
+  const {data}=await sb.auth.getSession();
+  button.disabled=true;
+  const rows=requiredLegalDocuments.map(d=>({user_id:data.session.user.id,document_type:d.document_type,document_version:d.current_version}));
+  const {error}=await sb.from('legal_acceptances').upsert(rows,{onConflict:'user_id,document_type,document_version'});
+  button.disabled=false;
+  if(error){errorEl.textContent='Acceptance could not be recorded. Please try again.';return;}
+  legalAcceptanceCurrent=true; document.getElementById('consentGate').style.display='none';
+});
+
+document.getElementById('cancelReportBtn')?.addEventListener('click',()=>{document.getElementById('reportSheet').style.display='none';});
+document.getElementById('reportForm')?.addEventListener('submit',async e=>{
+  e.preventDefault(); if(!pendingReportTarget)return;
+  const {data}=await sb.auth.getSession();
+  const payload={reporter_id:data.session.user.id,reported_user_id:pendingReportTarget.reportedUserId,message_id:pendingReportTarget.messageId||null,reason:document.getElementById('reportReason').value,details:document.getElementById('reportDetails').value.trim()||null};
+  const {data:report,error}=await sb.from('content_reports').insert(payload).select('id').single();
+  if(error)return alert(`Report could not be submitted: ${error.message}`);
+  e.target.reset(); document.getElementById('reportSheet').style.display='none'; pendingReportTarget=null;
+  alert(`Report submitted. Reference: ${report.id}`);
+});
+
+document.getElementById('deleteAccountBtn')?.addEventListener('click',async()=>{
+  if(!confirm('Request account deletion? Access will end immediately and permanent deletion is scheduled in 14 days.'))return;
+  showBiometricLock();
+  if(!await biometricAuthenticate()){hideBiometricLock();return alert('Device authentication is required.');}
+  const headers=await getAdminHeaders();
+  const res=await fetch(COMPLIANCE_FUNCTION_URL,{method:'POST',headers,body:JSON.stringify({action:'requestDeletion'})});
+  const result=await res.json();
+  if(!res.ok){hideBiometricLock();return alert(result.error||'Deletion request failed.');}
+  await sb.auth.signOut();
+  alert(`Deletion request ${result.requestId} received. Permanent deletion is scheduled for ${new Date(result.scheduledFor).toLocaleDateString()}. Contact support during the recovery window to cancel.`);
+});
 
 async function loadAdminMembers() {
   if (!sb) return;
@@ -813,12 +936,40 @@ async function loadAdminMembers() {
         }
       });
     });
+    loadAdminReports();
   } catch (error) {
     console.error('Admin list error:', error);
     if (loadingEl) loadingEl.style.display = 'none';
     if (requestLoadingEl) requestLoadingEl.style.display = 'none';
     if (listEl) listEl.innerHTML = '<p style="text-align:center;color:var(--primary-red);font-size:0.85rem;">Failed to load members. ' + (error.message || '') + '</p>';
   }
+}
+
+async function loadAdminReports() {
+  const list=document.getElementById('adminReportList'); if(!list)return;
+  try {
+    const headers=await getAdminHeaders();
+    const res=await fetch(COMPLIANCE_FUNCTION_URL,{method:'POST',headers,body:JSON.stringify({action:'listReports'})});
+    const data=await res.json(); if(!res.ok)throw new Error(data.error||'Could not load reports');
+    const reports=data.reports||[],open=reports.filter(r=>r.status==='open'||r.status==='reviewing');
+    document.getElementById('adminReportCount').textContent=open.length;
+    list.innerHTML=open.length?'':'<p class="admin-empty">No open reports.</p>';
+    open.forEach(report=>{
+      const reporter=data.users?.[report.reporter_id]||{},reported=data.users?.[report.reported_user_id]||{};
+      const card=document.createElement('div'); card.className='report-card';
+      card.innerHTML=`<div class="report-meta"><strong>${escapeHTML(report.reason.replaceAll('_',' '))}</strong><span>${new Date(report.created_at).toLocaleString()}</span></div><p>${escapeHTML(report.chat_messages?.body||'User report (no message attached)')}</p><small>Reporter: ${escapeHTML(reporter.email||report.reporter_id)}<br>Reported: ${escapeHTML(reported.email||report.reported_user_id)}</small><textarea class="form-input report-notes" rows="2" maxlength="2000" placeholder="Moderator notes"></textarea><div class="report-actions"><button data-decision="hide_message">Hide</button><button data-decision="remove_message">Remove</button><button data-decision="warn_user">Warn</button><button data-decision="suspend_user">Suspend</button><button data-decision="dismiss">Dismiss</button></div>`;
+      card.querySelectorAll('[data-decision]').forEach(btn=>btn.addEventListener('click',()=>moderateReport(report.id,btn.dataset.decision,card.querySelector('.report-notes').value)));
+      list.appendChild(card);
+    });
+  } catch(error){list.innerHTML=`<p class="form-error">${escapeHTML(error.message)}</p>`;}
+}
+
+async function moderateReport(reportId,decision,notes) {
+  if(!confirm(`Apply moderation action: ${decision.replaceAll('_',' ')}?`))return;
+  const headers=await getAdminHeaders();
+  const res=await fetch(COMPLIANCE_FUNCTION_URL,{method:'POST',headers,body:JSON.stringify({action:'moderateReport',reportId,decision,notes})});
+  const data=await res.json(); if(!res.ok)return showAdminAlert(data.error||'Moderation failed','error');
+  showAdminAlert('Report resolved.','success'); loadAdminReports();
 }
 
 function getAdminUserName(user) {
