@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pta-v3';
+const CACHE_NAME = 'pta-v2';
 const ASSETS = [
   './',
   './index.html',

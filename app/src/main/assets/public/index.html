@@ -426,47 +426,43 @@
     <!-- ===== Admin Page (hidden, shown for admins only) ===== -->
     <div class="page" id="page-admin">
       <h2 class="section-title scroll-animate"><i class="bi bi-shield-lock"></i> Admin Panel</h2>
-      <p class="section-subtitle scroll-animate">Manage members and invitations</p>
+      <p class="section-subtitle scroll-animate">Review account requests and manage members</p>
 
-      <!-- Invite Member -->
+      <div id="adminAlerts"></div>
+
+      <!-- Account Requests -->
       <div class="card-glass scroll-animate">
-        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 14px;">
-          <i class="bi bi-person-plus" style="color: var(--primary-green);"></i> Invite Member
-        </h3>
-        <div id="adminAlerts"></div>
-        <form id="inviteForm">
-          <div style="display: flex; gap: 12px;">
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="inviteFirstName">First Name</label>
-              <input type="text" class="form-input" id="inviteFirstName" placeholder="First name" required>
-            </div>
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="inviteLastName">Last Name</label>
-              <input type="text" class="form-input" id="inviteLastName" placeholder="Last name" required>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="inviteEmail">Email Address</label>
-            <input type="email" class="form-input" id="inviteEmail" placeholder="Enter email to invite" required>
-          </div>
-          <button type="submit" class="auth-btn">
-            <span class="btn-text">Send Invitation</span>
-            <div class="spinner-border spinner-border-sm" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-          </button>
-        </form>
+        <div class="admin-section-heading">
+          <h3><i class="bi bi-person-check"></i> Account requests</h3>
+          <span class="admin-count" id="adminRequestCount">0</span>
+        </div>
+        <p class="admin-section-help">Generate an access code for a requester, then share it with them.</p>
+        <div id="adminRequestLoading" class="admin-loading">
+          <div class="spinner-border spinner-border-sm" role="status"></div> Loading requests...
+        </div>
+        <div id="adminRequestList"></div>
       </div>
 
       <!-- Member List -->
       <div class="card-glass scroll-animate" style="margin-top: 12px;">
-        <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 14px;">
-          <i class="bi bi-people" style="color: var(--primary-green);"></i> Members
-        </h3>
-        <div id="adminLoading" style="text-align: center; padding: 20px; opacity: 0.6; font-size: 0.85rem;">
+        <div class="admin-section-heading">
+          <h3><i class="bi bi-people"></i> Members</h3>
+          <span class="admin-count" id="adminMemberCount">0</span>
+        </div>
+        <div id="adminLoading" class="admin-loading">
           <div class="spinner-border spinner-border-sm" role="status"></div> Loading members...
         </div>
         <div id="adminMemberList"></div>
+      </div>
+
+      <!-- Administrator List -->
+      <div class="card-glass scroll-animate" style="margin-top: 12px;">
+        <div class="admin-section-heading">
+          <h3><i class="bi bi-shield-check"></i> Administrators</h3>
+          <span class="admin-count" id="adminAdminCount">0</span>
+        </div>
+        <p class="admin-section-help">Administrators can review requests, generate codes, and manage members.</p>
+        <div id="adminAdminList"></div>
       </div>
 
       <!-- Biometric Toggle -->
@@ -490,21 +486,7 @@
   </div><!-- /app-shell -->
 
   <div class="menu-overlay protected-app" id="menuOverlay" style="display:none;"></div>
-  <aside class="side-menu protected-app" id="sideMenu" style="display:none;">
-    <div class="side-menu-header">
-      <strong>PTA Menu</strong>
-      <button class="icon-btn" id="menuClose" aria-label="Close menu"><i class="bi bi-x-lg"></i></button>
-    </div>
-    <button class="menu-item" data-menu-page="page-gallery"><i class="bi bi-megaphone"></i> Noticeboard</button>
-    <button class="menu-item" data-menu-page="page-chat"><i class="bi bi-chat-dots"></i> Chatroom</button>
-    <button class="menu-item menu-parent" id="settingsMenuToggle" aria-expanded="false" aria-controls="settingsSubmenu">
-      <span><i class="bi bi-gear"></i> Settings</span>
-      <i class="bi bi-chevron-down menu-chevron"></i>
-    </button>
-    <div class="menu-submenu" id="settingsSubmenu" hidden>
-      <button class="menu-item menu-subitem" data-menu-sheet="changePasswordSheet"><i class="bi bi-key"></i> Change Password</button>
-    </div>
-  </aside>
+  <aside class="side-menu protected-app" id="sideMenu" style="display:none;"><div class="side-menu-header"><strong>PTA Menu</strong><button class="icon-btn" id="menuClose"><i class="bi bi-x-lg"></i></button></div><button class="menu-item" data-menu-page="page-gallery"><i class="bi bi-megaphone"></i> Noticeboard</button><button class="menu-item" data-menu-page="page-chat"><i class="bi bi-chat-dots"></i> Chatroom</button></aside>
 
   <!-- ===== Biometric Lock Screen ===== -->
   <div id="biometricLock" class="biometric-lock">
@@ -569,34 +551,6 @@
       <div style="text-align: center; margin-top: 14px;">
         <a href="#" class="auth-link" id="backToLogin">Back to Login</a>
       </div>
-    </div>
-  </div>
-
-  <!-- ===== Change Password Sheet ===== -->
-  <div class="bottom-sheet" id="changePasswordSheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-content">
-      <div class="sheet-icon"><i class="bi bi-shield-lock"></i></div>
-      <h3 class="sheet-title">Change Password</h3>
-      <p class="sheet-description">Confirm your current password, then choose a new password.</p>
-      <form id="changePasswordForm">
-        <div class="form-group">
-          <label class="form-label" for="currentPassword">Current Password</label>
-          <input type="password" class="form-input" id="currentPassword" autocomplete="current-password" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="newPassword">New Password</label>
-          <input type="password" class="form-input" id="newPassword" autocomplete="new-password" minlength="6" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="confirmNewPassword">Confirm New Password</label>
-          <input type="password" class="form-input" id="confirmNewPassword" autocomplete="new-password" minlength="6" required>
-        </div>
-        <button type="submit" class="auth-btn">
-          <span class="btn-text">Update Password</span>
-          <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>
-        </button>
-      </form>
     </div>
   </div>
 

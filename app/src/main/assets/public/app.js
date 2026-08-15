@@ -195,9 +195,13 @@ const ADMIN_EMAILS = [
   '2frankincense4m@gmail.com',
 ];
 
-function isAdmin(email) {
+function isAdmin(email, user = null) {
   if (!email) return false;
-  return ADMIN_EMAILS.includes(email.toLowerCase());
+  return ADMIN_EMAILS.includes(email.toLowerCase()) || user?.app_metadata?.is_admin === true;
+}
+
+function isAdminUser(user) {
+  return isAdmin(user?.email, user);
 }
 
 // ===== Biometric / Screen Lock 2FA =====
@@ -341,8 +345,8 @@ document.getElementById('loginForm').addEventListener('submit', async function (
   const inviteCode = document.getElementById('loginInviteCode').value.trim().toUpperCase();
   const submitButton = this.querySelector('.auth-btn');
 
-  if (!email || !password || (!isAdmin(email) && !inviteCode)) {
-    showAlert('Please fill in all fields');
+  if (!email || !password) {
+    showAlert('Please enter your email and password');
     return;
   }
 
@@ -356,7 +360,8 @@ document.getElementById('loginForm').addEventListener('submit', async function (
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
-    if (!isAdmin(data.user.email)) {
+    if (!isAdmin(data.user.email, data.user) && data.user.app_metadata?.invite_status !== 'approved') {
+      if (!inviteCode) throw new Error('Your account is awaiting approval. Enter the access code provided by an administrator.');
       const verifiedUser = await verifyInviteCode(inviteCode);
       data.user = verifiedUser;
     }
@@ -434,10 +439,10 @@ function updateNavigationForLoggedInUser(user) {
   }
   // Show upload section if logged in
   const uploadSection = document.getElementById('uploadSection');
-  if (uploadSection) uploadSection.style.display = isAdmin(user.email) ? 'block' : 'none';
+  if (uploadSection) uploadSection.style.display = isAdmin(user.email, user) ? 'block' : 'none';
 
   // Show admin tab if user is admin
-  if (isAdmin(user.email)) {
+  if (isAdmin(user.email, user)) {
     const adminTab = document.getElementById('adminTab');
     if (adminTab) adminTab.style.display = 'flex';
     loadAdminMembers();
@@ -452,14 +457,14 @@ function updateNavigationForLoggedInUser(user) {
 if (sb) {
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_OUT') showAuthLanding('loginPanel');
-    if (session && session.user && (isAdmin(session.user.email) || session.user.app_metadata?.invite_status === 'approved')) {
+    if (session && session.user && (isAdmin(session.user.email, session.user) || session.user.app_metadata?.invite_status === 'approved')) {
       showProtectedApp(session.user);
     }
   });
 
   // Check existing session
   sb.auth.getSession().then(({ data }) => {
-    if (data.session && data.session.user && (isAdmin(data.session.user.email) || data.session.user.app_metadata?.invite_status === 'approved')) {
+    if (data.session && data.session.user && (isAdmin(data.session.user.email, data.session.user) || data.session.user.app_metadata?.invite_status === 'approved')) {
       showProtectedApp(data.session.user);
     } else {
       showAuthLanding('signupPanel');
@@ -476,60 +481,6 @@ document.getElementById('menuToggle')?.addEventListener('click', () => { documen
 document.getElementById('menuClose')?.addEventListener('click', closeMenu);
 document.getElementById('menuOverlay')?.addEventListener('click', closeMenu);
 document.querySelectorAll('[data-menu-page]').forEach(btn => btn.addEventListener('click', () => { const page = btn.dataset.menuPage; closeMenu(); switchPage(page); if (page === 'page-chat') loadChatMessages(); }));
-document.getElementById('settingsMenuToggle')?.addEventListener('click', (event) => {
-  const button = event.currentTarget;
-  const submenu = document.getElementById('settingsSubmenu');
-  const expanded = button.getAttribute('aria-expanded') === 'true';
-  button.setAttribute('aria-expanded', String(!expanded));
-  if (submenu) submenu.hidden = expanded;
-});
-document.querySelectorAll('[data-menu-sheet]').forEach((button) => button.addEventListener('click', () => {
-  closeMenu();
-  showSheet(button.dataset.menuSheet);
-}));
-
-document.getElementById('changePasswordForm')?.addEventListener('submit', async function (event) {
-  event.preventDefault();
-  const currentPassword = document.getElementById('currentPassword').value;
-  const newPassword = document.getElementById('newPassword').value;
-  const confirmPassword = document.getElementById('confirmNewPassword').value;
-  const submitButton = this.querySelector('.auth-btn');
-
-  if (newPassword.length < 6) {
-    showAlert('Your new password must be at least 6 characters.', 'error', 'changePasswordSheet');
-    return;
-  }
-  if (newPassword !== confirmPassword) {
-    showAlert('The new passwords do not match.', 'error', 'changePasswordSheet');
-    return;
-  }
-  if (currentPassword === newPassword) {
-    showAlert('Choose a new password that is different from your current password.', 'error', 'changePasswordSheet');
-    return;
-  }
-
-  setButtonLoading(submitButton, true);
-  try {
-    if (!sb) throw new Error('Account service is unavailable.');
-    const { data: sessionData, error: sessionError } = await sb.auth.getSession();
-    if (sessionError || !sessionData.session?.user?.email) throw new Error('Your session has expired. Please log in again.');
-
-    const email = sessionData.session.user.email;
-    const { error: verifyError } = await sb.auth.signInWithPassword({ email, password: currentPassword });
-    if (verifyError) throw new Error('Your current password is incorrect.');
-
-    const { error: updateError } = await sb.auth.updateUser({ password: newPassword });
-    if (updateError) throw updateError;
-
-    this.reset();
-    showAlert('Password changed successfully.', 'success', 'changePasswordSheet');
-    setTimeout(hideSheet, 1200);
-  } catch (error) {
-    showAlert(error.message || 'Unable to change your password. Please try again.', 'error', 'changePasswordSheet');
-  } finally {
-    setButtonLoading(submitButton, false);
-  }
-});
 function renderChatMessage(m, uid) { const row=document.createElement('div'); row.className='chat-message'+(m.user_id===uid?' mine':''); const n=document.createElement('strong'); n.textContent=m.sender_name||'PTA Member'; const p=document.createElement('p'); p.textContent=m.body; const t=document.createElement('small'); t.textContent=new Date(m.created_at).toLocaleString(); row.append(n,p,t); return row; }
 async function loadChatMessages() { if(!sb)return; const {data:s}=await sb.auth.getSession(); if(!s.session)return; const box=document.getElementById('chatMessages'); const {data,error}=await sb.from('chat_messages').select('*').order('created_at',{ascending:true}).limit(200); box.innerHTML=''; if(error){box.textContent='Chatroom setup is required in Supabase.';return;} data.forEach(m=>box.appendChild(renderChatMessage(m,s.session.user.id))); box.scrollTop=box.scrollHeight; if(!chatChannel)chatChannel=sb.channel('pta-chat').on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages'},p=>{box.appendChild(renderChatMessage(p.new,s.session.user.id));box.scrollTop=box.scrollHeight;}).subscribe(); }
 document.getElementById('chatForm')?.addEventListener('submit',async e=>{e.preventDefault();const input=document.getElementById('chatInput'),body=input.value.trim();if(!body)return;const {data}=await sb.auth.getSession(),user=data.session?.user;if(!user)return;const sender_name=user.user_metadata?.full_name||user.user_metadata?.first_name||user.email.split('@')[0];const {error}=await sb.from('chat_messages').insert({user_id:user.id,sender_name,body});if(!error)input.value='';else alert(error.message);});
@@ -697,12 +648,18 @@ async function getAdminHeaders() {
 async function loadAdminMembers() {
   if (!sb) return;
   const { data: sessionData } = await sb.auth.getSession();
-  if (!sessionData.session || !isAdmin(sessionData.session.user.email)) return;
+  if (!sessionData.session || !isAdmin(sessionData.session.user.email, sessionData.session.user)) return;
 
   const listEl = document.getElementById('adminMemberList');
+  const requestListEl = document.getElementById('adminRequestList');
+  const adminListEl = document.getElementById('adminAdminList');
   const loadingEl = document.getElementById('adminLoading');
+  const requestLoadingEl = document.getElementById('adminRequestLoading');
   if (loadingEl) loadingEl.style.display = 'block';
+  if (requestLoadingEl) requestLoadingEl.style.display = 'block';
   if (listEl) listEl.innerHTML = '';
+  if (requestListEl) requestListEl.innerHTML = '';
+  if (adminListEl) adminListEl.innerHTML = '';
 
   try {
     const headers = await getAdminHeaders();
@@ -716,45 +673,91 @@ async function loadAdminMembers() {
     if (!res.ok) throw new Error(data.error || 'Failed to load members');
 
     if (loadingEl) loadingEl.style.display = 'none';
+    if (requestLoadingEl) requestLoadingEl.style.display = 'none';
 
-    if (!data.users || data.users.length === 0) {
-      if (listEl) listEl.innerHTML = '<p style="text-align:center;opacity:0.6;font-size:0.85rem;">No members found.</p>';
-      return;
-    }
+    const users = data.users || [];
+    const requests = users.filter((u) => !isAdminUser(u) && u.app_metadata?.invite_status !== 'approved');
+    const members = users.filter((u) => !isAdminUser(u) && u.app_metadata?.invite_status === 'approved');
+    const administrators = users.filter(isAdminUser);
+    const requestCount = document.getElementById('adminRequestCount');
+    const memberCount = document.getElementById('adminMemberCount');
+    const adminCount = document.getElementById('adminAdminCount');
+    if (requestCount) requestCount.textContent = requests.length;
+    if (memberCount) memberCount.textContent = members.length;
+    if (adminCount) adminCount.textContent = administrators.length;
 
-    data.users.forEach((u) => {
-      const name = (u.user_metadata && (u.user_metadata.first_name || u.user_metadata.full_name)) || u.email.split('@')[0];
-      const userIsAdmin = isAdmin(u.email);
-      const inviteStatus = u.app_metadata?.invite_status || (userIsAdmin ? 'approved' : 'pending');
+    if (!requests.length && requestListEl) requestListEl.innerHTML = '<p class="admin-empty">No account requests.</p>';
+    if (!members.length && listEl) listEl.innerHTML = '<p class="admin-empty">No members found.</p>';
+    if (!administrators.length && adminListEl) adminListEl.innerHTML = '<p class="admin-empty">No administrators found.</p>';
+
+    requests.forEach((u) => {
+      const name = getAdminUserName(u);
+      const status = u.app_metadata?.invite_status === 'issued' ? 'Code issued' : 'Awaiting review';
+      const item = document.createElement('div');
+      item.className = 'admin-member-item admin-request-item';
+      item.innerHTML = `
+        <div class="admin-member-info">
+          <i class="bi bi-person-exclamation admin-member-icon"></i>
+          <div>
+            <div class="admin-member-name">${escapeHTML(name)}</div>
+            <div class="admin-member-email">${escapeHTML(u.email || '')}</div>
+            <span class="admin-status">${status}</span>
+          </div>
+        </div>
+        <div class="admin-member-actions">
+          <button class="admin-code-btn" data-user-id="${u.id}" data-email="${escapeHTML(u.email || '')}"><i class="bi bi-key"></i> ${u.app_metadata?.invite_status === 'issued' ? 'New code' : 'Generate code'}</button>
+          <button class="admin-action-btn admin-remove" aria-label="Reject account request" data-user-id="${u.id}" data-email="${escapeHTML(u.email || '')}"><i class="bi bi-x-circle"></i></button>
+        </div>`;
+      requestListEl.appendChild(item);
+    });
+
+    members.forEach((u) => {
+      const name = getAdminUserName(u);
       const item = document.createElement('div');
       item.className = 'admin-member-item';
       item.innerHTML = `
         <div class="admin-member-info">
-          <i class="bi ${userIsAdmin ? 'bi-shield-check' : 'bi-person'} admin-member-icon"></i>
+          <i class="bi bi-person admin-member-icon"></i>
           <div>
-            <div class="admin-member-name">${name}</div>
-            <div class="admin-member-email">${u.email}</div>
+            <div class="admin-member-name">${escapeHTML(name)}</div>
+            <div class="admin-member-email">${escapeHTML(u.email || '')}</div>
           </div>
         </div>
         <div class="admin-member-actions">
-          ${userIsAdmin ? '<span class="admin-badge">Admin</span>' : `${inviteStatus !== 'approved' ? `<button class="admin-code-btn" data-user-id="${u.id}" data-email="${u.email}"><i class="bi bi-key"></i> Issue code</button>` : '<span class="admin-badge">Active</span>'}<button class="admin-action-btn admin-remove" data-user-id="${u.id}" data-email="${u.email}"><i class="bi bi-person-x"></i></button>`}
+          <button class="admin-promote-btn" data-user-id="${u.id}" data-email="${escapeHTML(u.email || '')}"><i class="bi bi-shield-plus"></i> Make admin</button>
+          <button class="admin-action-btn admin-remove" aria-label="Remove member" data-user-id="${u.id}" data-email="${escapeHTML(u.email || '')}"><i class="bi bi-person-x"></i></button>
         </div>
       `;
       if (listEl) listEl.appendChild(item);
     });
 
+    administrators.forEach((u) => {
+      const item = document.createElement('div');
+      item.className = 'admin-member-item';
+      item.innerHTML = `
+        <div class="admin-member-info">
+          <i class="bi bi-shield-check admin-member-icon"></i>
+          <div>
+            <div class="admin-member-name">${escapeHTML(getAdminUserName(u))}</div>
+            <div class="admin-member-email">${escapeHTML(u.email || '')}</div>
+          </div>
+        </div>
+        <span class="admin-badge">Admin</span>`;
+      adminListEl.appendChild(item);
+    });
+
     // Wire remove buttons
-    listEl.querySelectorAll('.admin-remove').forEach((btn) => {
+    document.getElementById('page-admin').querySelectorAll('.admin-remove').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         const userId = btn.getAttribute('data-user-id');
         const email = btn.getAttribute('data-email');
-        if (confirm(`Remove user ${email}? This will delete their account.`)) {
+        if (confirm(`Remove ${email}? This will permanently delete their account.`)) {
           await removeMember(userId);
         }
       });
     });
 
-    listEl.querySelectorAll('.admin-code-btn').forEach((btn) => {
+    requestListEl.querySelectorAll('.admin-code-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         btn.disabled = true;
         try {
@@ -773,11 +776,43 @@ async function loadAdminMembers() {
         }
       });
     });
+
+    listEl.querySelectorAll('.admin-promote-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Grant administrator privileges to ${btn.dataset.email}?`)) return;
+        btn.disabled = true;
+        try {
+          const headers = await getAdminHeaders();
+          const res = await fetch(EDGE_FUNCTION_URL, {
+            method: 'POST', headers,
+            body: JSON.stringify({ action: 'promoteAdmin', userId: btn.dataset.userId }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not promote member');
+          showAdminAlert(`${btn.dataset.email} is now an administrator.`, 'success');
+          loadAdminMembers();
+        } catch (error) {
+          showAdminAlert(error.message, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
   } catch (error) {
     console.error('Admin list error:', error);
     if (loadingEl) loadingEl.style.display = 'none';
+    if (requestLoadingEl) requestLoadingEl.style.display = 'none';
     if (listEl) listEl.innerHTML = '<p style="text-align:center;color:var(--primary-red);font-size:0.85rem;">Failed to load members. ' + (error.message || '') + '</p>';
   }
+}
+
+function getAdminUserName(user) {
+  return (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.first_name)) || (user.email || 'Unknown').split('@')[0];
+}
+
+function escapeHTML(value) {
+  const span = document.createElement('span');
+  span.textContent = String(value);
+  return span.innerHTML;
 }
 
 async function removeMember(userId) {
@@ -796,27 +831,6 @@ async function removeMember(userId) {
   } catch (error) {
     console.error('Remove member error:', error);
     showAdminAlert('Failed to remove member. ' + (error.message || ''), 'error');
-  }
-}
-
-async function inviteMember(email, firstName, lastName) {
-  if (!sb) return;
-  try {
-    const headers = await getAdminHeaders();
-    const res = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ action: 'inviteUser', email, firstName, lastName }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to send invitation');
-    showAdminAlert(`Invitation sent to ${email}!`, 'success');
-    loadAdminMembers();
-  } catch (error) {
-    console.error('Invite error:', error);
-    let msg = 'Failed to send invitation.';
-    if (error.message.includes('already')) msg = 'This email is already registered.';
-    showAdminAlert(msg, 'error');
   }
 }
 
@@ -863,28 +877,30 @@ function showInviteShareOptions(email, inviteCode) {
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
   });
 
-  actions.append(emailButton, whatsappButton);
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'invite-share-btn share-copy';
+  copyButton.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
+  copyButton.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(message);
+    showAdminAlert('Access code copied.', 'success');
+  });
+
+  const shareButton = document.createElement('button');
+  shareButton.type = 'button';
+  shareButton.className = 'invite-share-btn share-native';
+  shareButton.innerHTML = '<i class="bi bi-share"></i> Share';
+  shareButton.addEventListener('click', async () => {
+    if (navigator.share) await navigator.share({ title: 'PTA access code', text: message });
+    else await navigator.clipboard.writeText(message);
+  });
+
+  actions.append(copyButton, shareButton, emailButton, whatsappButton);
   panel.appendChild(actions);
   container.appendChild(panel);
 }
 
-// Admin invite form handler
 document.addEventListener('DOMContentLoaded', () => {
-  const inviteForm = document.getElementById('inviteForm');
-  if (inviteForm) {
-    inviteForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('inviteEmail').value;
-      const firstName = document.getElementById('inviteFirstName').value;
-      const lastName = document.getElementById('inviteLastName').value;
-      const btn = inviteForm.querySelector('.auth-btn');
-      setButtonLoading(btn, true);
-      await inviteMember(email, firstName, lastName);
-      setButtonLoading(btn, false);
-      inviteForm.reset();
-    });
-  }
-
   // Biometric toggle handler
   const biometricToggle = document.getElementById('biometricToggle');
   if (biometricToggle) {
